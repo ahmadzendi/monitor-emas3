@@ -167,7 +167,7 @@ html = """
             overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;
         }
         #usdIdrRealtime {
-            width: 300px;
+            width: 200px;
             border: 1px solid #ccc;
             # border-radius: 6px;
             padding: 10px;
@@ -242,7 +242,7 @@ html = """
         <div>
             <h3>Harga USD/IDR Google Finance</h3>
             <div id="usdIdrRealtime">
-            <p>Harga saat ini: <span id="currentPrice" style="color: red;">Loading...</span></p>
+            <p>Harga saat ini: <span id="currentPrice" style="color: red; font-weight: bold;">Loading...</span></p>
             <h4>10 Harga Terakhir:</h4>
             <ul id="priceList" style="list-style:none; padding-left:0; max-height:280px; overflow-y:auto;"></ul>
             </div>
