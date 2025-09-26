@@ -75,7 +75,7 @@ async def api_loop():
                         last_buy = buying_rate
                         shown_updates.add(updated_at)
                         update_event.set()
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
             except Exception as e:
                 print("Error in api_loop:", e)
                 await asyncio.sleep(1)
@@ -96,10 +96,10 @@ async def usd_idr_loop():
                         })
                         usd_idr_history[:] = usd_idr_history[-10:]
                         usd_idr_update_event.set()
-            await asyncio.sleep(15)
+            await asyncio.sleep(1)
         except Exception as e:
             print("Error in usd_idr_loop:", e)
-            await asyncio.sleep(15)
+            await asyncio.sleep(1)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
