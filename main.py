@@ -306,6 +306,10 @@ html = """
 </html>
 """
 
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return HTMLResponse(html)
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
