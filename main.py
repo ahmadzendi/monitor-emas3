@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
@@ -76,6 +76,13 @@ def get_usd_idr_price():
         print("Error fetching USD/IDR price:", e)
     return None
 
+def parse_price_to_float(price_str):
+    try:
+        # Ubah format "16.764,2000" jadi float 16764.2000
+        return float(price_str.replace('.', '').replace(',', '.'))
+    except:
+        return None
+
 html = """
 <!DOCTYPE html>
 <html>
@@ -134,7 +141,7 @@ html = """
         #usdIdrRealtime {
             width: 300px;
             border: 1px solid #ccc;
-            # border-radius: 6px;
+            border-radius: 6px;
             padding: 10px;
             height: 370px;
             overflow-y: auto;
@@ -166,57 +173,39 @@ html = """
         </thead>
         <tbody></tbody>
     </table>
-    <div style="margin-top:40px;">
-            <h3>Chart Harga Emas (XAU/USD)</h3>
-            <div id="tradingview_chart"></div>
-            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-            <script type="text/javascript">
-            new TradingView.widget({
-                "width": "100%",
-                "height": 400,
-                "symbol": "OANDA:XAUUSD",
-                "interval": "15",
-                "timezone": "Asia/Jakarta",
-                "theme": "light",
-                "style": "1",
-                "locale": "id",
-                "toolbar_bg": "#f1f3f6",
-                "enable_publishing": false,
-                "hide_top_toolbar": false,
-                "save_image": false,
-                "container_id": "tradingview_chart"
-            });
-            </script>
-        </div>
+
     <div class="container-flex">
-        <div>
-            <h3 style="display:block; margin-top:30px;">Harga USD/IDR Investing - 15 Menit</h3>
-        <div style="overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;">
-        <iframe 
-            src="https://sslcharts.investing.com/index.php?force_lang=54&pair_ID=2138&timescale=900&candles=80&style=candles"
-            width="628"
-            height="430"
-            style="margin-top:-62px; border:0;"
-            scrolling="no"
-            frameborder="0"
-            allowtransparency="true">
-        </iframe>
-        </div>
+        <div id="usdIdrWidget">
+            <b style="display:block; margin-top:30px;">USD/IDR (Dolar AS ke Rupiah Indonesia) - 15 Menit</b>
+            <iframe 
+                src="https://sslcharts.investing.com/index.php?force_lang=54&pair_ID=2138&timescale=900&candles=80&style=candles"
+                width="628"
+                height="430"
+                style="margin-top:-62px; border:0;"
+                scrolling="no"
+                frameborder="0"
+                allowtransparency="true">
+            </iframe>
         </div>
 
-        <div>
-            <h3>Harga USD/IDR Google Finance</h3>
-            <div id="usdIdrRealtime">
+        <div id="usdIdrRealtime">
+            <h3>Harga USD/IDR Real-Time</h3>
             <p>Harga saat ini: <span id="currentPrice" style="color: red;">Loading...</span></p>
             <h4>10 Harga Terakhir:</h4>
             <ul id="priceList" style="list-style:none; padding-left:0; max-height:280px; overflow-y:auto;"></ul>
-            </div>
         </div>
     </div>
     <h3 style="display:block; margin-top:30px;">Kalender Ekonomi</h3>
-        <div style="width:630px; ">
-            <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe><div class="poweredBy" style="font-family: Arial, Helvetica, sans-serif;"><span style="font-size: 11px;color: #333333;text-decoration: none;">Kalender Ekonomi Real Time dipersembahkan oleh <a href="https://id.investing.com" rel="nofollow" target="_blank" style="font-size: 11px;color: #06529D; font-weight: bold;" class="underline_link">Investing.com Indonesia</a>.</span></div>        
+    <div style="width:630px; ">
+        <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
+        <div class="poweredBy" style="font-family: Arial, Helvetica, sans-serif;">
+            <span style="font-size: 11px;color: #333333;text-decoration: none;">
+                Kalender Ekonomi Real Time dipersembahkan oleh 
+                <a href="https://id.investing.com" rel="nofollow" target="_blank" style="font-size: 11px;color: #06529D; font-weight: bold;" class="underline_link">Investing.com Indonesia</a>.
+            </span>
+        </div>        
     </div>
+
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 
@@ -316,16 +305,6 @@ html = """
 </body>
 </html>
 """
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    return HTMLResponse(html)
-
-def parse_price_to_float(price_str):
-    try:
-        # Ubah format "16.764,2000" jadi float 16764.2000
-        return float(price_str.replace('.', '').replace(',', '.'))
-    except:
-        return None
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
