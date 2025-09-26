@@ -362,6 +362,26 @@ async def websocket_endpoint(websocket: WebSocket):
     active_connections.add(websocket)
     last_sent_buying_rate = None
     last_usd_idr_price = None
+
+    # Kirim data terakhir langsung saat connect
+    if history:
+        last_sent_buying_rate = history[-1]["buying_rate"]
+    if usd_idr_history:
+        last_usd_idr_price = usd_idr_history[-1]["price"]
+
+    await websocket.send_text(json.dumps({
+        "history": [
+            {
+                "buying_rate": format_rupiah(h["buying_rate"]),
+                "selling_rate": format_rupiah(h["selling_rate"]),
+                "status": h["status"],
+                "created_at": h["created_at"]
+            }
+            for h in history[-1441:]
+        ],
+        "usd_idr_history": usd_idr_history
+    }))
+
     try:
         while True:
             wait_tasks = [
@@ -369,8 +389,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(usd_idr_update_event.wait())
             ]
             done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
-
-            # Bersihkan task yang belum selesai
             for task in pending:
                 task.cancel()
 
