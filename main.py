@@ -1,17 +1,19 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
-import requests
+import httpx
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 
 history = []
 last_buy = None
 active_connections = set()
 usd_idr_history = []
+
+update_event = asyncio.Event()
+usd_idr_update_event = asyncio.Event()
 
 def format_rupiah(nominal):
     try:
@@ -19,63 +21,96 @@ def format_rupiah(nominal):
     except:
         return str(nominal)
 
-async def api_loop():
-    global last_buy, history
-    api_url = "https://api.treasury.id/api/v1/antigrvty/gold/rate"
-    shown_updates = set()
-    while True:
-        try:
-            response = requests.post(api_url, timeout=10)
-            if response.ok:
-                data = response.json().get("data", {})
-                buying_rate = int(data.get("buying_rate", 0))
-                selling_rate = int(data.get("selling_rate", 0))
-                updated_at = data.get("updated_at")
-                if updated_at and updated_at not in shown_updates:
-                    status = "➖ Tetap"
-                    if last_buy is not None:
-                        if buying_rate > last_buy:
-                            status = "🚀 Naik"
-                        elif buying_rate < last_buy:
-                            status = "🔻 Turun"
-                    row = {
-                        "buying_rate": buying_rate,
-                        "selling_rate": selling_rate,
-                        "status": status,
-                        "created_at": updated_at
-                    }
-                    history.append(row)
-                    history[:] = history[-1441:]
-                    last_buy = buying_rate
-                    shown_updates.add(updated_at)
-            await asyncio.sleep(0.3)
-        except Exception as e:
-            print("Error:", e)
-            await asyncio.sleep(1)
+def parse_price_to_float(price_str):
+    try:
+        # Ubah format "16.764,2000" jadi float 16764.2000
+        return float(price_str.replace('.', '').replace(',', '.'))
+    except:
+        return None
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(api_loop())
-    yield
-    task.cancel()
-
-app = FastAPI(lifespan=lifespan)
-
-def get_usd_idr_price():
+async def fetch_usd_idr_price():
     url = "https://www.google.com/finance/quote/USD-IDR"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     }
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        price_span = soup.find("div", class_="YMlKec fxKbKc")
-        if price_span:
-            return price_span.text.strip()
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            price_div = soup.find("div", class_="YMlKec fxKbKc")
+            if price_div:
+                return price_div.text.strip()
     except Exception as e:
         print("Error fetching USD/IDR price:", e)
     return None
+
+async def api_loop():
+    global last_buy, history
+    api_url = "https://api.treasury.id/api/v1/antigrvty/gold/rate"
+    shown_updates = set()
+    async with httpx.AsyncClient(timeout=10) as client:
+        while True:
+            try:
+                response = await client.post(api_url)
+                if response.status_code == 200:
+                    data = response.json().get("data", {})
+                    buying_rate = int(data.get("buying_rate", 0))
+                    selling_rate = int(data.get("selling_rate", 0))
+                    updated_at = data.get("updated_at")
+                    if updated_at and updated_at not in shown_updates:
+                        status = "➖ Tetap"
+                        if last_buy is not None:
+                            if buying_rate > last_buy:
+                                status = "🚀 Naik"
+                            elif buying_rate < last_buy:
+                                status = "🔻 Turun"
+                        row = {
+                            "buying_rate": buying_rate,
+                            "selling_rate": selling_rate,
+                            "status": status,
+                            "created_at": updated_at
+                        }
+                        history.append(row)
+                        history[:] = history[-1441:]
+                        last_buy = buying_rate
+                        shown_updates.add(updated_at)
+                        update_event.set()  # beri tanda ada update baru
+                await asyncio.sleep(1)  # polling 1 detik
+            except Exception as e:
+                print("Error in api_loop:", e)
+                await asyncio.sleep(1)
+
+async def usd_idr_loop():
+    global usd_idr_history
+    while True:
+        try:
+            price_str = await fetch_usd_idr_price()
+            if price_str:
+                price_float = parse_price_to_float(price_str)
+                if price_float is not None:
+                    if not usd_idr_history or usd_idr_history[-1]["price"] != price_str:
+                        wib_now = datetime.utcnow() + timedelta(hours=7)
+                        usd_idr_history.append({
+                            "price": price_str,
+                            "time": wib_now.strftime("%H:%M:%S")
+                        })
+                        usd_idr_history[:] = usd_idr_history[-10:]
+                        usd_idr_update_event.set()
+            await asyncio.sleep(15)  # polling 15 detik
+        except Exception as e:
+            print("Error in usd_idr_loop:", e)
+            await asyncio.sleep(15)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task1 = asyncio.create_task(api_loop())
+    task2 = asyncio.create_task(usd_idr_loop())
+    yield
+    task1.cancel()
+    task2.cancel()
+
+app = FastAPI(lifespan=lifespan)
 
 html = """
 <!DOCTYPE html>
@@ -135,7 +170,7 @@ html = """
         #usdIdrRealtime {
             width: 300px;
             border: 1px solid #ccc;
-            # border-radius: 6px;
+            /* border-radius: 6px; */
             padding: 10px;
             height: 370px;
             overflow-y: auto;
@@ -317,16 +352,10 @@ html = """
 </body>
 </html>
 """
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return HTMLResponse(html)
-
-def parse_price_to_float(price_str):
-    try:
-        # Ubah format "16.764,2000" jadi float 16764.2000
-        return float(price_str.replace('.', '').replace(',', '.'))
-    except:
-        return None
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -336,35 +365,29 @@ async def websocket_endpoint(websocket: WebSocket):
     last_usd_idr_price = None
     try:
         while True:
-            # Update harga emas
-            if history:
-                current_buying_rate = history[-1]["buying_rate"]
-            else:
-                current_buying_rate = None
+            # Tunggu event update harga emas atau USD/IDR
+            await asyncio.wait(
+                [update_event.wait(), usd_idr_update_event.wait()],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            # Reset event yang sudah triggered
+            if update_event.is_set():
+                update_event.clear()
+            if usd_idr_update_event.is_set():
+                usd_idr_update_event.clear()
 
-            # Update harga USD/IDR
-            usd_price_str = get_usd_idr_price()
-            usd_price = parse_price_to_float(usd_price_str) if usd_price_str else None
+            # Ambil data terbaru
+            current_buying_rate = history[-1]["buying_rate"] if history else None
+            current_usd_idr_price = usd_idr_history[-1]["price"] if usd_idr_history else None
 
             send_history = False
             if current_buying_rate != last_sent_buying_rate:
                 send_history = True
                 last_sent_buying_rate = current_buying_rate
 
-            if usd_price is not None:
-                if last_usd_idr_price is None or usd_price != last_usd_idr_price:
-                    # Cek duplikat harga terakhir di histori
-                    if not usd_idr_history or usd_idr_history[-1]["price"] != usd_price:
-                        # Hitung current time dalam WIB
-                        wib_now = datetime.utcnow() + timedelta(hours=7)
-                        usd_idr_history.append({
-                            "price": usd_price_str,
-                            "time": wib_now.strftime("%H:%M:%S")
-                        })
-                        # Hanya simpan 10 entry terakhir
-                        usd_idr_history[:] = usd_idr_history[-10:]
-                    last_usd_idr_price = usd_price
-                    send_history = True
+            if current_usd_idr_price != last_usd_idr_price:
+                send_history = True
+                last_usd_idr_price = current_usd_idr_price
 
             if send_history:
                 msg = {
@@ -381,9 +404,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 }
                 await websocket.send_text(json.dumps(msg))
             else:
+                # Kirim ping supaya koneksi tetap hidup
                 await websocket.send_text(json.dumps({"ping": True}))
-
-            await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         pass
     finally:
