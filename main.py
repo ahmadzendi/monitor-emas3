@@ -23,7 +23,6 @@ def format_rupiah(nominal):
 
 def parse_price_to_float(price_str):
     try:
-        # Ubah format "16.764,2000" jadi float 16764.2000
         return float(price_str.replace('.', '').replace(',', '.'))
     except:
         return None
@@ -75,8 +74,8 @@ async def api_loop():
                         history[:] = history[-1441:]
                         last_buy = buying_rate
                         shown_updates.add(updated_at)
-                        update_event.set()  # beri tanda ada update baru
-                await asyncio.sleep(1)  # polling 1 detik
+                        update_event.set()
+                await asyncio.sleep(1)
             except Exception as e:
                 print("Error in api_loop:", e)
                 await asyncio.sleep(1)
@@ -97,7 +96,7 @@ async def usd_idr_loop():
                         })
                         usd_idr_history[:] = usd_idr_history[-10:]
                         usd_idr_update_event.set()
-            await asyncio.sleep(15)  # polling 15 detik
+            await asyncio.sleep(15)
         except Exception as e:
             print("Error in usd_idr_loop:", e)
             await asyncio.sleep(15)
@@ -112,7 +111,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-html = """
+html = """ 
 <!DOCTYPE html>
 <html>
 <head>
@@ -170,7 +169,7 @@ html = """
         #usdIdrRealtime {
             width: 300px;
             border: 1px solid #ccc;
-            /* border-radius: 6px; */
+            # border-radius: 6px;
             padding: 10px;
             height: 370px;
             overflow-y: auto;
@@ -365,18 +364,21 @@ async def websocket_endpoint(websocket: WebSocket):
     last_usd_idr_price = None
     try:
         while True:
-            # Tunggu event update harga emas atau USD/IDR
-            await asyncio.wait(
-                [update_event.wait(), usd_idr_update_event.wait()],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            # Reset event yang sudah triggered
+            wait_tasks = [
+                asyncio.create_task(update_event.wait()),
+                asyncio.create_task(usd_idr_update_event.wait())
+            ]
+            done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+
+            # Bersihkan task yang belum selesai
+            for task in pending:
+                task.cancel()
+
             if update_event.is_set():
                 update_event.clear()
             if usd_idr_update_event.is_set():
                 usd_idr_update_event.clear()
 
-            # Ambil data terbaru
             current_buying_rate = history[-1]["buying_rate"] if history else None
             current_usd_idr_price = usd_idr_history[-1]["price"] if usd_idr_history else None
 
@@ -404,7 +406,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 }
                 await websocket.send_text(json.dumps(msg))
             else:
-                # Kirim ping supaya koneksi tetap hidup
                 await websocket.send_text(json.dumps({"ping": True}))
     except WebSocketDisconnect:
         pass
