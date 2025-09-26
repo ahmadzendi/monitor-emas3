@@ -167,7 +167,7 @@ html = """
             overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;
         }
         #usdIdrRealtime {
-            width: 200px;
+            width: 250px;
             border: 1px solid #ccc;
             # border-radius: 6px;
             padding: 10px;
