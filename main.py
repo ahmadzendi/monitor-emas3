@@ -167,7 +167,7 @@ html = """
             overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;
         }
         #usdIdrRealtime {
-            width: 250px;
+            width: 240px;
             border: 1px solid #ccc;
             # border-radius: 6px;
             padding: 10px;
@@ -226,10 +226,10 @@ html = """
     <div class="container-flex">
         <div>
             <h3 style="display:block; margin-top:30px;">Harga USD/IDR Investing - 15 Menit</h3>
-        <div style="overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;">
+        <div style="overflow:hidden; height:370px; width:620px; border:1px solid #ccc; border-radius:6px;">
         <iframe 
             src="https://sslcharts.investing.com/index.php?force_lang=54&pair_ID=2138&timescale=900&candles=80&style=candles"
-            width="628"
+            width="618"
             height="430"
             style="margin-top:-62px; border:0;"
             scrolling="no"
