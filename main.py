@@ -160,14 +160,14 @@ html = """
         }
         .container-flex {
             display: flex;
-            gap: 25px;
+            gap: 15px;
             margin-top: 10px;
         }
         #usdIdrWidget {
             overflow:hidden; height:370px; width:630px; border:1px solid #ccc; border-radius:6px;
         }
         #usdIdrRealtime {
-            width: 240px;
+            width: 248px;
             border: 1px solid #ccc;
             # border-radius: 6px;
             padding: 10px;
